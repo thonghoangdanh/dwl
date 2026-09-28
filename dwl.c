@@ -242,6 +242,8 @@ typedef struct {
 	const Layout *lt;
 	enum wl_output_transform rr;
 	int x, y;
+	int w, h;      /* mode size; 0 means the output's preferred mode */
+	float refresh; /* Hz; 0 means the highest available for w x h */
 } MonitorRule;
 
 typedef struct {
@@ -362,6 +364,8 @@ static void setfullscreen(Client *c, int fullscreen);
 static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
 static void setmon(Client *c, Monitor *m, uint32_t newtags);
+static void setmonmode(struct wlr_output *wlr_output, struct wlr_output_state *state,
+		int w, int h, float refresh);
 static void setpsel(struct wl_listener *listener, void *data);
 static void setsel(struct wl_listener *listener, void *data);
 static void setup(void);
@@ -1237,11 +1241,13 @@ createmon(struct wl_listener *listener, void *data)
 		}
 	}
 
-	/* The mode is a tuple of (width, height, refresh rate), and each
-	 * monitor supports only a specific set of modes. We just pick the
-	 * monitor's preferred mode; a more sophisticated compositor would let
-	 * the user configure it. */
-	wlr_output_state_set_mode(&state, wlr_output_preferred_mode(wlr_output));
+	/* The mode is a tuple of (width, height, refresh rate). Use the mode
+	 * from the matching rule if it sets one, otherwise the monitor's
+	 * preferred mode. */
+	if (r < END(monrules) && r->w > 0 && r->h > 0)
+		setmonmode(wlr_output, &state, r->w, r->h, r->refresh);
+	else
+		wlr_output_state_set_mode(&state, wlr_output_preferred_mode(wlr_output));
 
 	/* Set up event listeners */
 	LISTEN(&wlr_output->events.frame, &m->frame, rendermon);
@@ -2700,6 +2706,35 @@ setmon(Client *c, Monitor *m, uint32_t newtags)
 }
 
 void
+setmonmode(struct wlr_output *wlr_output, struct wlr_output_state *state,
+		int w, int h, float refresh)
+{
+	struct wlr_output_mode *mode, *best = NULL;
+	int mhz = (int)(refresh * 1000.0f + 0.5f);
+
+	/* Prefer an advertised mode of this size, closest to the requested
+	 * refresh rate (or the highest one if no rate was given) */
+	wl_list_for_each(mode, &wlr_output->modes, link) {
+		if (mode->width != w || mode->height != h)
+			continue;
+		if (!best || (mhz ? abs(mode->refresh - mhz) < abs(best->refresh - mhz)
+				: mode->refresh > best->refresh))
+			best = mode;
+	}
+	if (best) {
+		wlr_output_state_set_mode(state, best);
+		return;
+	}
+
+	/* Not advertised by the output: try a custom mode, and fall back to
+	 * the preferred mode if the output rejects it */
+	wlr_output_state_set_enabled(state, 1);
+	wlr_output_state_set_custom_mode(state, w, h, mhz);
+	if (!wlr_output_test_state(wlr_output, state))
+		wlr_output_state_set_mode(state, wlr_output_preferred_mode(wlr_output));
+}
+
+void
 setpsel(struct wl_listener *listener, void *data)
 {
 	/* This event is raised by the seat when a client wants to set the selection,
@@ -2877,8 +2912,14 @@ setup(void)
 	 * Xcursor themes to source cursor images from and makes sure that cursor
 	 * images are available at all scale factors on the screen (necessary for
 	 * HiDPI support). Scaled cursors will be loaded with each output. */
-	cursor_mgr = wlr_xcursor_manager_create(NULL, 24);
-	setenv("XCURSOR_SIZE", "24", 1);
+	cursor_mgr = wlr_xcursor_manager_create(cursor_theme, cursor_size);
+	if (cursor_theme)
+		setenv("XCURSOR_THEME", cursor_theme, 1);
+	{
+		char cursor_size_str[16];
+		snprintf(cursor_size_str, sizeof(cursor_size_str), "%u", cursor_size);
+		setenv("XCURSOR_SIZE", cursor_size_str, 1);
+	}
 
 	/*
 	 * wlr_cursor *only* displays an image on screen. It does not move around

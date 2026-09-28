@@ -1,4 +1,5 @@
 /* Taken from https://github.com/djpohly/dwl/issues/466 */
+#include <cstddef>
 #define COLOR(hex)    { ((hex >> 24) & 0xFF) / 255.0f, \
                         ((hex >> 16) & 0xFF) / 255.0f, \
                         ((hex >> 8) & 0xFF) / 255.0f, \
@@ -6,21 +7,25 @@
 /* appearance */
 static const int sloppyfocus               = 1;  /* focus follows mouse */
 static const unsigned int systrayspacing   = 2; /* systray spacing */
-static const int showsystray               = 1; /* 0 means no systray */
+static const int showsystray               = 0; /* 0 means no systray */
 static const int bypass_surface_visibility = 0;  /* 1 means idle inhibitors will disable idle tracking even if it's surface isn't visible  */
 static const unsigned int borderpx         = 2;  /* border pixel of windows */
 static const int showbar                   = 1; /* 0 means no bar */
 static const int topbar                    = 1; /* 0 means bottom bar */
-static const char *fonts[]                 = {"JetBrains Mono Nerd Font:size=12"};
+static const char *fonts[]                 = {"Iosevka Nerd Font:size=12"};
 /* This conforms to the xdg-protocol. Set the alpha to zero to restore the old behavior */
 static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f}; /* You can also use glsl colors */
 static const float rootcolor[]             = COLOR(0x222222ff);
 static uint32_t colors[][3]                = {
 	/*               fg          bg          border    */
 	[SchemeNorm] = { 0xa6adc8ff, 0x161616ff, 0x161616ff },
-	[SchemeSel]  = { 0x161616ff, 0xf5c2e7ff, 0xf5c2e7ff },
+	[SchemeSel]  = { 0x161616ff, 0x61afefff, 0x61afefff },
 	[SchemeUrg]  = { 0,          0,          0xf38ba8ff },
 };
+/* cursor (same as Hyprland) */
+static const char *cursor_theme            = "Bibata-Modern-Ice";
+static const unsigned int cursor_size      = 24;
+
 /* tagging */
 static char *tags[] = { "1", "2", "3", "4", "5" };
 
@@ -29,8 +34,13 @@ static int log_level = WLR_ERROR;
 
 static const Rule rules[] = {
 	/* app_id             title       tags mask     isfloating   monitor */
-	{ "Gimp_EXAMPLE",     NULL,       0,            1,           -1 }, /* Start on currently visible tags floating, not tiled */
-	{ "firefox_EXAMPLE",  NULL,       1 << 8,       0,           -1 }, /* Start on ONLY tag "9" */
+	{ "Gimp",     NULL,       0,            1,           -1 }, /* Start on currently visible tags floating, not tiled */
+	{ NULL,               "Wiremix", 0,     1,           -1 },
+	/* Playwright headed browsers (XWayland): floating so the requested window size is kept.
+	 * Matching is case-sensitive: normal Chromium runs on Wayland as "chromium-browser"
+	 * and stays tiled; only the XWayland class "Chromium-browser" floats. */
+	{ "Chromium-browser", NULL, 0,          1,           -1 },
+	{ "playwright-e2e",   NULL, 0,          1,           -1 },
 
 };
 
@@ -47,10 +57,11 @@ static const Layout layouts[] = {
  * WARNING: negative values other than (-1, -1) cause problems with Xwayland clients due to
  * https://gitlab.freedesktop.org/xorg/xserver/-/issues/899 */
 static const MonitorRule monrules[] = {
-   /* name        mfact  nmaster scale layout       rotate/reflect                x    y
+   /* name        mfact  nmaster scale layout       rotate/reflect                x    y    width height refresh
+    * width/height 0 means the preferred mode; refresh 0 means the highest rate
     * example of a HiDPI laptop monitor:
-    { "eDP-1",    0.5f,  1,      2,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 }, */
-  { "eDP-1",    0.5f,  1,      1.75,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1 }
+    { "eDP-1",    0.5f,  1,      2,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0,    0,     0.0f }, */
+  { "eDP-1",    0.5f,  1,      1.25,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  2560, 1600,  60.0f }
 	/* default monitor rule: can be changed but cannot be eliminated; at least one monitor rule must exist */
 };
 
@@ -124,11 +135,14 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 
 /* commands */
 static const char *termcmd[] = { "kitty", NULL };
-static const char *browsercmd[] = { "firefox", NULL };
 static const char *menucmd[] = {
     "wmenu-run",
-    "-f", "JetBrainsMono Nerd Font 12",
+    "-f", "Iosevka Nerd Font 12",
     "-l", "10",
+    /* colors match SchemeNorm / SchemeSel above */
+    "-N", "#161616", "-n", "#a6adc8",
+    "-M", "#61afef", "-m", "#161616",
+    "-S", "#61afef", "-s", "#161616",
     NULL
 };
 
@@ -136,6 +150,9 @@ static const char *menucmd[] = {
 static const char *mutecmd[]  = { "pactl", "set-sink-mute", "@DEFAULT_SINK@", "toggle", NULL };
 static const char *volupcmd[]  = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%", NULL };
 static const char *voldowncmd[] = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "-5%", NULL };
+
+static const char *screenshotcmd[] = { "grim -g '$(slurp)' - | swappy -f -", NULL };
+static const char *recordingcmd[] = { "$HOME/init/scripts/recording.sh", NULL}
 
 static const char *brightnessup[] = { "brightnessctl", "set", "+10%", NULL };
 static const char *brightnessdown[] = { "brightnessctl", "set", "10%-", NULL };
@@ -145,7 +162,6 @@ static const Key keys[] = {
 	/* modifier                  key                  function          argument */
 	{ MODKEY,                    XKB_KEY_p,           spawn,            {.v = menucmd} },
 	{ MODKEY,                    XKB_KEY_Return,      spawn,            {.v = termcmd} },
-	{ MODKEY,                    XKB_KEY_b,           spawn,            {.v = browsercmd} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_b,           togglebar,        {0} },
 	{ MODKEY,                    XKB_KEY_j,           focusstack,       {.i = +1} },
 	{ MODKEY,                    XKB_KEY_k,           focusstack,       {.i = -1} },
@@ -169,7 +185,10 @@ static const Key keys[] = {
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_less,        tagmon,           {.i = WLR_DIRECTION_LEFT} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,     tagmon,           {.i = WLR_DIRECTION_RIGHT} },
 	{ MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_greater,     tagmon,           {.i = WLR_DIRECTION_RIGHT} },
-  { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_L, spawn, {.v = (const char*[]){"swaylock", "-f", "-c", "000000", NULL}} },
+  { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_L, spawn, {.v = (const char*[]){"hyprlock", NULL}} },
+  { MODKEY,                    XKB_KEY_s, spawn, {.v = screenshotcmd} },
+  { MODKEY|WLR_MODIFIER_SHIFT, XKB_KEY_S, spawn, {.v = recordingcmd} },
+  { MODKEY,                    XKB_KEY_b, spawn, {.v = (const char*[]){"swaync-client", "-t", "-sw", NULL}} },
   { 0,                 XKB_KEY_XF86AudioMute,        spawn,       {.v = mutecmd } },
   { 0,                 XKB_KEY_XF86AudioRaiseVolume, spawn,       {.v = volupcmd } },
   { 0,                 XKB_KEY_XF86AudioLowerVolume, spawn,       {.v = voldowncmd } },

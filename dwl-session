@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Kill background jobs when the script exits
+trap 'kill $(jobs -p)' EXIT
+
+# Start swayidle in the background
+swayidle -w \
+  timeout 300 'hyprlock' \
+  timeout 600 'wlopm --off "*"' resume 'wlopm --on "*"' \
+  timeout 900 'systemctl suspend' \
+  before-sleep 'hyprlock' &
+
+# Launch dwl (Use 'slstatus -s | dwl' ONLY if dwl has the bar patch)
+slstatus -s | dwl

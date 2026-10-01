@@ -1,5 +1,5 @@
 /* Taken from https://github.com/djpohly/dwl/issues/466 */
-#include <cstddef>
+#include <stddef.h>
 #define COLOR(hex)    { ((hex >> 24) & 0xFF) / 255.0f, \
                         ((hex >> 16) & 0xFF) / 255.0f, \
                         ((hex >> 8) & 0xFF) / 255.0f, \
@@ -9,10 +9,16 @@ static const int sloppyfocus               = 1;  /* focus follows mouse */
 static const unsigned int systrayspacing   = 2; /* systray spacing */
 static const int showsystray               = 0; /* 0 means no systray */
 static const int bypass_surface_visibility = 0;  /* 1 means idle inhibitors will disable idle tracking even if it's surface isn't visible  */
-static const unsigned int borderpx         = 2;  /* border pixel of windows */
+static const unsigned int borderpx         = 1;  /* border pixel of windows */
+
+static const int smartgaps                 = 1;  /* 1 means no outer gap when there is only one window */
+static int gaps                            = 1;  /* 1 means gaps between windows are added */
+static const unsigned int gappx            = 4; /* gap pixel between windows */
+
 static const int showbar                   = 1; /* 0 means no bar */
 static const int topbar                    = 1; /* 0 means bottom bar */
-static const char *fonts[]                 = {"Iosevka Nerd Font:size=12"};
+static const char *fonts[]                 = {"Iosevka Nerd Font:size=13"};
+
 /* This conforms to the xdg-protocol. Set the alpha to zero to restore the old behavior */
 static const float fullscreen_bg[]         = {0.0f, 0.0f, 0.0f, 1.0f}; /* You can also use glsl colors */
 static const float rootcolor[]             = COLOR(0x222222ff);
@@ -22,7 +28,7 @@ static uint32_t colors[][3]                = {
 	[SchemeSel]  = { 0x161616ff, 0x61afefff, 0x61afefff },
 	[SchemeUrg]  = { 0,          0,          0xf38ba8ff },
 };
-/* cursor (same as Hyprland) */
+
 static const char *cursor_theme            = "Bibata-Modern-Ice";
 static const unsigned int cursor_size      = 24;
 
@@ -31,6 +37,16 @@ static char *tags[] = { "1", "2", "3", "4", "5" };
 
 /* logging */
 static int log_level = WLR_ERROR;
+
+/* Autostart */
+static const char *const autostart[] = {
+        "hyprlock", NULL,
+        "awww-daemon", NULL,
+        /* wait for the awww daemon socket before restoring the wallpaper */
+        "sh", "-c", "until awww query >/dev/null 2>&1; do sleep 0.1; done; waypaper --restore", NULL,
+        "swaync", NULL,
+        NULL /* terminate */
+};
 
 static const Rule rules[] = {
 	/* app_id             title       tags mask     isfloating   monitor */
@@ -60,12 +76,11 @@ static const MonitorRule monrules[] = {
    /* name        mfact  nmaster scale layout       rotate/reflect                x    y    width height refresh
     * width/height 0 means the preferred mode; refresh 0 means the highest rate
     * example of a HiDPI laptop monitor:
-    { "eDP-1",    0.5f,  1,      2,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0,    0,     0.0f }, */
-  { "eDP-1",    0.5f,  1,      1.25,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  2560, 1600,  60.0f }
-	/* default monitor rule: can be changed but cannot be eliminated; at least one monitor rule must exist */
+    */
+  { "eDP-1",    0.5f,  1,      1.25,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  2560, 1600,  60.0f },
+  { NULL,       0.55f, 1,      1,    &layouts[0], WL_OUTPUT_TRANSFORM_NORMAL,   -1,  -1,  0,    0,     0.0f },
 };
 
-/* keyboard */
 static const struct xkb_rule_names xkb_rules = {
 	/* can specify fields: rules, model, layout, variant, options */
 	.options = "ctrl:nocaps",
@@ -137,7 +152,7 @@ static const enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TA
 static const char *termcmd[] = { "kitty", NULL };
 static const char *menucmd[] = {
     "wmenu-run",
-    "-f", "Iosevka Nerd Font 12",
+    "-f", "Iosevka Nerd Font 13",
     "-l", "10",
     /* colors match SchemeNorm / SchemeSel above */
     "-N", "#161616", "-n", "#a6adc8",
@@ -151,8 +166,8 @@ static const char *mutecmd[]  = { "pactl", "set-sink-mute", "@DEFAULT_SINK@", "t
 static const char *volupcmd[]  = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "+5%", NULL };
 static const char *voldowncmd[] = { "pactl", "set-sink-volume", "@DEFAULT_SINK@", "-5%", NULL };
 
-static const char *screenshotcmd[] = { "grim -g '$(slurp)' - | swappy -f -", NULL };
-static const char *recordingcmd[] = { "$HOME/init/scripts/recording.sh", NULL}
+static const char *screenshotcmd[] = { "sh", "-c", "grim -g \"$(slurp)\" - | swappy -f -", NULL };
+static const char *recordingcmd[]  = { "sh", "-c", "$HOME/init/scripts/recording.sh", NULL };
 
 static const char *brightnessup[] = { "brightnessctl", "set", "+10%", NULL };
 static const char *brightnessdown[] = { "brightnessctl", "set", "10%-", NULL };
